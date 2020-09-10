@@ -42,7 +42,7 @@ $hosts = Get-VMHost
 $vms = Get-Vm
 
 foreach ($vmHost in $hosts) {
-    $hoststat = "" | Select-Object HostName, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin
+    $hoststat = "" | Select-Object HostName, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin, NumCpu, CpuTotalGhz
     $hoststat.HostName = $vmHost.name
   
     $statcpu = Get-Stat -Entity ($vmHost)-start (get-date).AddDays(-7) -Finish (Get-Date)-MaxSamples 10 -stat cpu.usage.average
@@ -57,16 +57,19 @@ foreach ($vmHost in $hosts) {
     $hoststat.MemMax = [math]::round($mem.Maximum, 2)
     $hoststat.MemAvg = [math]::round($mem.Average, 2)
     $hoststat.MemMin = [math]::round($mem.Minimum, 2)
+    $hoststat.CpuTotalGhz = [math]::round($vmHost.CpuTotalMhz / 1000, 2)
+    $hoststat.NumCpu = $vmHost.NumCpu
     $allhosts += $hoststat
 }
 
 foreach ($vm in $vms) {
-    $vmstat = "" | Select-Object VmName, PowerState, NumCPUs, MemoryGB, HarddiskGB, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin
+    $vmstat = "" | Select-Object VmName, PowerState, NumCPUs, CpuGhz, MemoryGB, HarddiskGB, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin
     $vmstat.VmName = $vm.name
     $vmstat.Powerstate = $vm.powerstate
     $vmstat.NumCPUs = $vm.NumCPU
     $vmstat.MemoryGB = $vm.MemoryGB
-  
+    $vmstat.CpuGhz = [math]::round($vm.NumCPU * $vmHost.CpuTotalMhz / $vmHost.NumCpu / 1000, 2)
+
     $vmstat.HarddiskGB = [math]::round((Get-HardDisk -VM $vm | Measure-Object -Sum CapacityGB).Sum, 2)
     
     if ($vmstat.Powerstate) {
@@ -93,8 +96,8 @@ foreach ($vm in $vms) {
     
     $allvms += $vmstat
 }
-$allData.vms = $allvms | Select-Object VmName, PowerState, NumCPUs, MemoryGB, HarddiskGB, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin
-$allData.hosts = $allhosts | Select-Object HostName, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin 
+$allData.vms = $allvms | Select-Object VmName, PowerState, NumCPUs, CPUGhz, MemoryGB, HarddiskGB, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin
+$allData.hosts = $allhosts | Select-Object HostName, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin, NumCpu, CpuTotalGhz 
 
 if ($json) {
     Write-Output $allData | ConvertTo-Json
