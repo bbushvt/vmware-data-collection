@@ -63,8 +63,11 @@ foreach ($vmHost in $hosts) {
 }
 
 foreach ($vm in $vms) {
-    $vmstat = "" | Select-Object VmName, PowerState, NumCPUs, CpuGhz, MemoryGB, HarddiskGB, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin
+    $vmstat = "" | Select-Object Id, VmName, GuestOS, PowerState, NumCPUs, CpuGhz, MemoryGB, HarddiskGB, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin
+    $vmstat.ID = $vm.ID
     $vmstat.VmName = $vm.name
+    #$vmstat.Guest = ($vm.Guest -split ":")[1]
+    $vmstat.GuestOS = $vm.Guest.OSFullname
     $vmstat.Powerstate = $vm.powerstate
     $vmstat.NumCPUs = $vm.NumCPU
     $vmstat.MemoryGB = $vm.MemoryGB
@@ -96,7 +99,7 @@ foreach ($vm in $vms) {
     
     $allvms += $vmstat
 }
-$allData.vms = $allvms | Select-Object VmName, PowerState, NumCPUs, CPUGhz, MemoryGB, HarddiskGB, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin
+$allData.vms = $allvms | Select-Object ID, VmName, GuestOS, PowerState, NumCPUs, CPUGhz, MemoryGB, HarddiskGB, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin
 $allData.hosts = $allhosts | Select-Object HostName, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin, NumCpu, CpuTotalGhz 
 
 if ($json) {
