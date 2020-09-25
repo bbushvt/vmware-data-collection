@@ -1,4 +1,4 @@
-param ($vcenter, $username, $password, [switch]$json)
+param ([string] $vcenter, [string] $username, [String] $password, [int] $metricDays, [switch] $csv, [switch] $anon)
 
 function ExitWithCode {
     param
@@ -8,6 +8,19 @@ function ExitWithCode {
 
     $host.SetShouldExit($exitcode)
     exit
+}
+
+Function IIf($If, $Right, $Wrong) {If ($If) {$Right} Else {$Wrong}}
+
+Function Get-StringHash([String] $data)
+{
+    $sha1 = New-Object System.Security.Cryptography.SHA1CryptoServiceProvider
+    $hashByteArray = $sha1.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($data))
+    foreach($byte in $hashByteArray)
+    {
+      $result += "{0:X2}" -f $byte
+    }
+    return $result;
 }
 
 # Check to make sure we have all the parameters we need
@@ -22,8 +35,8 @@ if ($null -eq $password) {
     $password = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto([System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($ss_password))
 }
 
-if ($null -eq $json) {
-    $json = $false
+if ($null -eq $csv) {
+    $csv = $false
 }
 
 Connect-VIServer $vcenter -User $username -Password $password | Out-Null
@@ -43,10 +56,11 @@ $vms = Get-Vm
 
 foreach ($vmHost in $hosts) {
     $hoststat = "" | Select-Object HostName, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin, NumCpu, CpuTotalGhz
-    $hoststat.HostName = $vmHost.name
+
+    $hoststat.HostName = (IIF $anon (Get-StringHash $vmHost.name) $vmHost.name)
   
-    $statcpu = Get-Stat -Entity ($vmHost)-start (get-date).AddDays(-7) -Finish (Get-Date)-MaxSamples 10 -stat cpu.usage.average
-    $statmem = Get-Stat -Entity ($vmHost)-start (get-date).AddDays(-7) -Finish (Get-Date)-MaxSamples 10 -stat mem.usage.average
+    $statcpu = Get-Stat -Entity ($vmHost)-start (get-date).AddDays(-$metricDays) -Finish (Get-Date)-MaxSamples 10 -stat cpu.usage.average
+    $statmem = Get-Stat -Entity ($vmHost)-start (get-date).AddDays(-$metricDays) -Finish (Get-Date)-MaxSamples 10 -stat mem.usage.average
 
     $cpu = $statcpu | Measure-Object -Property value -Average -Maximum -Minimum
     $mem = $statmem | Measure-Object -Property value -Average -Maximum -Minimum
@@ -64,9 +78,10 @@ foreach ($vmHost in $hosts) {
 
 foreach ($vm in $vms) {
     $vmstat = "" | Select-Object Id, VmName, GuestOS, PowerState, NumCPUs, CpuGhz, MemoryGB, HarddiskGB, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin
-    $vmstat.ID = $vm.ID
-    $vmstat.VmName = $vm.name
-    #$vmstat.Guest = ($vm.Guest -split ":")[1]
+    
+    $vmstat.ID = (IIF $anon (Get-StringHash $vm.ID) $vm.ID)
+    $vmstat.VmName = (IIF $anon (Get-StringHash $vm.ID) $vm.ID)
+
     $vmstat.GuestOS = $vm.Guest.OSFullname
     $vmstat.Powerstate = $vm.powerstate
     $vmstat.NumCPUs = $vm.NumCPU
@@ -76,8 +91,8 @@ foreach ($vm in $vms) {
     $vmstat.HarddiskGB = [math]::round((Get-HardDisk -VM $vm | Measure-Object -Sum CapacityGB).Sum, 2)
     
     if ($vmstat.Powerstate) {
-        $statcpu = Get-Stat -Entity ($vm)-start (get-date).AddDays(-7) -Finish (Get-Date)-MaxSamples 10 -stat "cpu.usage.average"
-        $statmem = Get-Stat -Entity ($vm)-start (get-date).AddDays(-7) -Finish (Get-Date)-MaxSamples 10 -stat "mem.usage.average"
+        $statcpu = Get-Stat -Entity ($vm)-start (get-date).AddDays(-$metricDays) -Finish (Get-Date)-MaxSamples 10 -stat "cpu.usage.average"
+        $statmem = Get-Stat -Entity ($vm)-start (get-date).AddDays(-$metricDays) -Finish (Get-Date)-MaxSamples 10 -stat "mem.usage.average"
   
         $cpu = $statcpu | Measure-Object -Property value -Average -Maximum -Minimum
         $mem = $statmem | Measure-Object -Property value -Average -Maximum -Minimum
@@ -102,13 +117,11 @@ foreach ($vm in $vms) {
 $allData.vms = $allvms | Select-Object ID, VmName, GuestOS, PowerState, NumCPUs, CPUGhz, MemoryGB, HarddiskGB, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin
 $allData.hosts = $allhosts | Select-Object HostName, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin, NumCpu, CpuTotalGhz 
 
-if ($json) {
-    Write-Output $allData | ConvertTo-Json
-}
-else {
+if ($csv) {
     $allhosts | Select-Object HostName, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin | Export-Csv "Hosts.csv" -noTypeInformation
     $allvms | Select-Object VmName, PowerState, NumCPUs, MemoryGB, HarddiskGB, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin | Export-Csv "VMs10.csv" -noTypeInformation
 }
 
+Write-Output $allData | ConvertTo-Json
 
 Exit 0
