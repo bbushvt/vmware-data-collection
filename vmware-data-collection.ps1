@@ -74,33 +74,28 @@ Write-Output "BEGIN_DATA_PARSE_SECTION"
 $allData = @{
     VMware = @{
         Clusters = @()
-        Hosts    = @()
     }
 }
 
-Function Add-VM($vmdata) {
+Function Add-DataNode($type, $data) {
     $found = $false
     foreach ($cluster in $allData.VMware.Clusters) {        
-        if ($cluster.Name -eq $vmdata.Cluster) {
-            $cluster.vms += $vmdata
+        if ($cluster.Name -eq $data.Cluster) {
+            $cluster[$type] += $data
             $found = $true
         }
     }
 
     if ($found -eq $false) {
-        $newCluster = @{
-            Name = $vmdata.Cluster
-            vms  = @()
+        $dataNode = @{
+            Name  = $data.Cluster
+            vms   = @()
+            Hosts = @()
         }
-        $newCluster.vms += $vmdata
-        $allData.VMware.Clusters += $newCluster
+        $dataNode[$type] += $data
+        $allData.VMware.Clusters += $dataNode
     }
 }
-
-Function Add-Host($hostdata) {
-    $allData.VMware.Hosts += $hostdata
-}
-
 
 $allvms = @()
 $allhosts = @()
@@ -130,8 +125,9 @@ foreach ($vmHost in $hosts) {
     $hoststat.MemMin = [math]::round($mem.Minimum, 2)
     $hoststat.CpuTotalGhz = [math]::round($vmHost.CpuTotalMhz / 1000, 2)
     $hoststat.NumCpu = $vmHost.NumCpu
+    $hoststat.Cluster = $vmHost.Parent.Name
     #$allhosts += $hoststat
-    Add-Host $hoststat
+    Add-DataNode "Hosts" $hoststat
 }
 
 foreach ($vm in $vms) {
@@ -178,7 +174,7 @@ foreach ($vm in $vms) {
     }
     
     #$allvms += $vmstat
-    Add-VM $vmstat
+    Add-DataNode "vms" $vmstat
 }
 # TODO - BCBUSH - Remove me
 #$allData.vms = $allvms | Select-Object ID, VmName, GuestOS, PowerState, NumCPUs, CPUGhz, MemoryGB, HarddiskGB, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin
@@ -192,6 +188,6 @@ if ($csv) {
     $allvms | Select-Object VmName, PowerState, NumCPUs, MemoryGB, HarddiskGB, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin | Export-Csv "VMs10.csv" -noTypeInformation
 }
 
-Write-Output $allData | ConvertTo-Json -Depth 50
-
+Write-Output $allData | ConvertTo-Json -Depth 10 
+#Write-Host ($allData | Format-Table | Out-String)
 Exit 0
