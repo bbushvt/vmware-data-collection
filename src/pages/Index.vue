@@ -17,6 +17,10 @@
     <div class='row justify-center q-pb-md'><q-input bg-color="white" type='password'
             outlined v-model='vcenter_password' label='vCenter Password' /></div>
     <div class='row justify-center q-pb-md'>
+      <q-checkbox v-model='anonymize' label='Anonymize Collection Data'
+        @input='saveDisabled = true;'/>
+    </div>
+    <div class='row justify-center q-pb-md'>
       <div class="q-px-md">
         <q-btn color='primary' label='Collect Data' @click='probe_vcenter'/>
       </div>
@@ -45,6 +49,7 @@ export default {
       message: '',
       saveDisabled: true,
       vmdata: {},
+      anonymize: false,
     };
   },
   methods: {
@@ -62,6 +67,7 @@ export default {
         vcenter_username: this.vcenter_username,
         vcenter_password: this.vcenter_password,
         output_file: this.output_file,
+        anonymize: this.anonymize,
       });
     },
     save_data() {

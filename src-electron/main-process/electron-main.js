@@ -66,7 +66,10 @@ ipcMain.on('save_file', async (e, args) => {
 ipcMain.on('get_vmware_data', async (e, args) => {
   // eslint-disable-next-line
 
-  const command = `./vmware-data-collection.ps1 -vcenter ${args.vcenter_hostname} -username ${args.vcenter_username} -password ${args.vcenter_password} -json`;
+  let command = `./vmware-data-collection.ps1 -vcenter ${args.vcenter_hostname} -username ${args.vcenter_username} -password ${args.vcenter_password} -json`;
+  if (args.anonymize) {
+    command += ' -anon';
+  }
   let output = '';
   const ps = new PowerShell(command, { debug: true });
   ps.on('error', (err) => {
