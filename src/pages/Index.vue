@@ -16,10 +16,14 @@
       v-model='vcenter_username' label='vCenter Username' /></div>
     <div class='row justify-center q-pb-md'><q-input bg-color="white" type='password'
             outlined v-model='vcenter_password' label='vCenter Password' /></div>
-    <div class='row justify-center q-pb-md'><q-input bg-color="white" outlined
-      v-model='output_file' label='Output File'/></div>
-    <div class='row justify-center q-pb-md'><q-btn color='primary'
-      label='Collect Data' @click='probe_vcenter'/></div>
+    <div class='row justify-center q-pb-md'>
+      <div class="q-px-md">
+        <q-btn color='primary' label='Collect Data' @click='probe_vcenter'/>
+      </div>
+      <div class="q-px-md">
+        <q-btn :disable='saveDisabled' color='primary' label='Save Data' @click='save_data'/>
+      </div>
+    </div>
     <div class='row justify-center q-pb-md' v-if='data_collected'>{{message}}</div>
   </q-page>
 </template>
@@ -39,6 +43,8 @@ export default {
       data_collected: false,
       data_error: false,
       message: '',
+      saveDisabled: true,
+      vmdata: {},
     };
   },
   methods: {
@@ -58,12 +64,16 @@ export default {
         output_file: this.output_file,
       });
     },
+    save_data() {
+      ipcRenderer.send('save_file', this.vmdata);
+    },
   },
   mounted() {
     this.$nextTick(() => {
       ipcRenderer.on('receive_vmare_data', (e, args) => {
         // eslint-disable-next-line
         //console.log(args);
+        this.vmdata = args.data;
         this.data_collected = true;
         if (args.success === false) {
           this.data_error = true;
@@ -72,6 +82,7 @@ export default {
           this.message = 'Successfully collected vCenter Data';
         }
         this.show_import_data_dialog = false;
+        this.saveDisabled = false;
       });
     });
   },

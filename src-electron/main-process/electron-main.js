@@ -1,5 +1,5 @@
 import {
-  app, BrowserWindow, nativeTheme, ipcMain,
+  app, BrowserWindow, nativeTheme, ipcMain, dialog,
 } from 'electron';
 
 const PowerShell = require('powershell');
@@ -55,6 +55,14 @@ function processData(data) {
   return obj;
 }
 
+ipcMain.on('save_file', async (e, args) => {
+  const savePath = await dialog.showSaveDialog(null);
+  // Save the file if the dialog wasn't canceled
+  if (!savePath.canceled) {
+    fs.writeFileSync(savePath.filePath, JSON.stringify(args));
+  }
+});
+
 ipcMain.on('get_vmware_data', async (e, args) => {
   // eslint-disable-next-line
 
@@ -80,9 +88,11 @@ ipcMain.on('get_vmware_data', async (e, args) => {
     if (code === 0) {
       const jsonData = output.split('BEGIN_DATA_PARSE_SECTION')[1];
       // eslint-disable-next-line
-      const vmwareData = processData(jsonData);
+      const vmwareData = {};
+      vmwareData.data = processData(jsonData);
       vmwareData.success = true;
-      fs.writeFileSync(args.output_file, JSON.stringify(vmwareData));
+      // No longer writtng the output file here
+      // fs.writeFileSync(args.output_file, JSON.stringify(vmwareData));
       e.sender.send('receive_vmare_data', vmwareData);
     } else {
       e.sender.send('receive_vmare_data', { success: false });
