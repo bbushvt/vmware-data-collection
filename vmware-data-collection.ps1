@@ -125,7 +125,7 @@ foreach ($vmHost in $hosts) {
     $hoststat.MemMin = [math]::round($mem.Minimum, 2)
     $hoststat.CpuTotalGhz = [math]::round($vmHost.CpuTotalMhz / 1000, 2)
     $hoststat.NumCpu = $vmHost.NumCpu
-    $hoststat.Cluster = $vmHost.Parent.Name
+    $hoststat.Cluster = LookupName $anonTables.cluster $vmHost.Parent.Name
     #$allhosts += $hoststat
     Add-DataNode "Hosts" $hoststat
 }
