@@ -126,6 +126,7 @@ foreach ($vmHost in $hosts) {
     $hoststat.CpuTotalGhz = [math]::round($vmHost.CpuTotalMhz / 1000, 2)
     $hoststat.NumCpu = $vmHost.NumCpu
     $hoststat.Cluster = LookupName $anonTables.cluster $vmHost.Parent.Name
+    $hoststat.MetricDays = $metricDays
     #$allhosts += $hoststat
     Add-DataNode "Hosts" $hoststat
 }
@@ -163,6 +164,7 @@ foreach ($vm in $vms) {
         $vmstat.MemMax = [math]::round($mem.Maximum, 2)
         $vmstat.MemAvg = [math]::round($mem.Average, 2)
         $vmstat.MemMin = [math]::round($mem.Minimum, 2)
+        $vmstat.MetricDays = $metricDays
     }
     else {
         $vmstat.CPUMax = 0.0
@@ -171,6 +173,7 @@ foreach ($vm in $vms) {
         $vmstat.MemMax = 0.0
         $vmstat.MemAvg = 0.0
         $vmstat.MemMin = 0.0
+        $vmstat.MetricDays = 0
     }
     
     #$allvms += $vmstat

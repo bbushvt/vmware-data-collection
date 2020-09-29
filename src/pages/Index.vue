@@ -9,15 +9,25 @@
         </q-card-section>
       </q-card>
     </q-dialog>
-    <div class='row justify-center'><h4>Enter vCenter Information</h4></div>
-    <div class='row justify-center q-pb-md'><q-input bg-color="white" outlined
-      v-model='vcenter_hostname' label='vCenter Hostname'/></div>
-    <div class='row justify-center q-pb-md'><q-input bg-color="white" outlined
-      v-model='vcenter_username' label='vCenter Username' /></div>
-    <div class='row justify-center q-pb-md'><q-input bg-color="white" type='password'
-            outlined v-model='vcenter_password' label='vCenter Password' /></div>
+    <div class='row justify-center'>
+      <h4>Enter vCenter Information</h4>
+    </div>
     <div class='row justify-center q-pb-md'>
-      <q-checkbox v-model='anonymize' label='Anonymize Collection Data'
+      <q-input bg-color="white" outlined style='width: 300px'
+      v-model='vcenter_hostname' label='vCenter Hostname'/>
+    </div>
+    <div class='row justify-center q-pb-md'>
+      <q-input bg-color="white" outlined  style='width: 300px'
+      v-model='vcenter_username' label='vCenter Username' />
+    </div>
+    <div class='row justify-center q-pb-md'>
+      <q-input bg-color="white" type='password'  style='width: 300px'
+            outlined v-model='vcenter_password' label='vCenter Password' />
+    </div>
+    <div class='row justify-center q-pb-md'>
+      <q-input bg-color="white" style='width: 158px'
+            outlined v-model='stat_days' label='Days to gather statistics' />
+      <q-checkbox v-model='anonymize' label='Anonymize Data'
         @input='saveDisabled = true;'/>
     </div>
     <div class='row justify-center q-pb-md'>
@@ -50,6 +60,7 @@ export default {
       saveDisabled: true,
       vmdata: {},
       anonymize: false,
+      stat_days: '7',
     };
   },
   methods: {
@@ -68,6 +79,7 @@ export default {
         vcenter_password: this.vcenter_password,
         output_file: this.output_file,
         anonymize: this.anonymize,
+        stat_days: this.stat_days,
       });
     },
     save_data() {

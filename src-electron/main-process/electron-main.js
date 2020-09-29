@@ -67,6 +67,7 @@ ipcMain.on('get_vmware_data', async (e, args) => {
   // eslint-disable-next-line
 
   let command = `./vmware-data-collection.ps1 -vcenter ${args.vcenter_hostname} -username ${args.vcenter_username} -password ${args.vcenter_password} -json`;
+  command += ` -metricDays ${args.stat_days}`;
   if (args.anonymize) {
     command += ' -anon';
   }
