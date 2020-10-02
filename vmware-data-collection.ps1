@@ -139,8 +139,8 @@ foreach ($vm in $vms) {
     $vmstat.VMID = $vm.ID.substring(15)
     $vmstat.HostID = $vm.VmHostId.substring(11)
     $vmstat.VmName = (IIF $anon (Get-StringHash $vm.Name) $vm.Name)
-    $vmstat.Cluster = LookupName $anonTables.cluster (Get-VMHost -VM IBMCli).parent.name
-    $vmstat.Datacenter = LookupName $anonTables.datacenter (Get-Datacenter -VM IBMCli).Name
+    $vmstat.Cluster = LookupName $anonTables.cluster (Get-VMHost -VM $vm.Name).parent.name
+    $vmstat.Datacenter = LookupName $anonTables.datacenter (Get-Datacenter -VM $vm.Name).Name
 
     $vmstat.GuestOS = IIF $vm.Guest.OSFullname.length $vm.Guest.OSFullname (Get-View -viewtype VirtualMachine -filter @{"Name" = $vm.Name }).Config.GuestFullName
     $vmstat.Powerstate = $vm.PowerState
