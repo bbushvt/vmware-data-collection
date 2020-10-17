@@ -12,25 +12,33 @@
     <div class='row justify-center'>
       <h4>Enter vCenter Information</h4>
     </div>
-    <div class='row justify-center q-pb-md'>
+    <div class='row justify-center q-pb-sm'>
       <q-input bg-color="white" outlined style='width: 300px'
       v-model='vcenter_hostname' label='vCenter Hostname'/>
     </div>
-    <div class='row justify-center q-pb-md'>
+    <div class='row justify-center q-pb-sm'>
       <q-input bg-color="white" outlined  style='width: 300px'
       v-model='vcenter_username' label='vCenter Username' />
     </div>
-    <div class='row justify-center q-pb-md'>
+    <div class='row justify-center q-pb-sm'>
       <q-input bg-color="white" type='password'  style='width: 300px'
             outlined v-model='vcenter_password' label='vCenter Password' />
     </div>
-    <div class='row justify-center q-pb-md'>
-      <q-input bg-color="white" style='width: 158px'
-            outlined v-model='stat_days' label='Days to gather statistics' />
-      <q-checkbox v-model='anonymize' label='Anonymize Data'
-        @input='saveDisabled = true;'/>
+    <div class='row justify-center q-pb-sm'>
+      <div class='q-pr-xl'>
+        <q-checkbox v-model='collect_stats' label='Get Statistics'
+          @input='saveDisabled = true; data_collected = false;'/>
+      </div>
+      <div class='q-pl-xl'>
+        <q-input bg-color="white" style='width: 60px'
+              outlined v-model='stat_days' label='Days' />
+      </div>
     </div>
-    <div class='row justify-center q-pb-md'>
+    <div class='row justify-center q-pb-sm'>
+      <q-checkbox v-model='anonymize' label='Anonymize Data'
+        @input='saveDisabled = true; data_collected = false;'/>
+    </div>
+    <div class='row justify-center q-pb-sm'>
       <div class="q-px-md">
         <q-btn color='primary' label='Collect Data' @click='probe_vcenter'/>
       </div>
@@ -61,6 +69,7 @@ export default {
       vmdata: {},
       anonymize: false,
       stat_days: '7',
+      collect_stats: false,
     };
   },
   methods: {
@@ -80,6 +89,7 @@ export default {
         output_file: this.output_file,
         anonymize: this.anonymize,
         stat_days: this.stat_days,
+        collect_stats: this.collect_stats,
       });
     },
     save_data() {

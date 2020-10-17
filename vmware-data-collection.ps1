@@ -1,4 +1,4 @@
-param ([string] $vcenter, [string] $username, [string] $password, [int] $metricDays = 7, [switch] $csv, [switch] $anon)
+param ([string] $vcenter, [string] $username, [string] $password, [int] $metricDays = 7, [switch] $anon, [switch] $CollectStats, [string] $outputFile, [switch] $script)
 
 function ExitWithCode {
     param
@@ -8,6 +8,30 @@ function ExitWithCode {
 
     $host.SetShouldExit($exitcode)
     exit
+}
+
+if ('' -eq $outputFile -And -Not $script) {
+    Write-Host "Error: must specify output file or script flag"
+    Exit
+}
+
+# Check to make sure we have all the parameters we need
+if ('' -eq $vcenter) {
+    $vcenter = Read-Host "Hostname or IP address for vCenter"
+}
+if ('' -eq $username) {
+    $username = Read-Host "vCenter Username"
+}
+if ('' -eq $password) {
+    $ss_password = Read-Host "vCenter Password" -AsSecureString
+    $password = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto([System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($ss_password))
+}
+
+Connect-VIServer $vcenter -User $username -Password $password | Out-Null
+
+if (0 -eq $?) {
+    # Connection failed, exit with code = 99
+    ExitWithCode 99
 }
 
 $anonTables = @{
@@ -34,9 +58,6 @@ Function LookupName($table, $name) {
         return $name
     }
 }
-
-Function IIf($If, $Right, $Wrong) { If ($If) { $Right } Else { $Wrong } }
-
 Function Get-StringHash([String] $data) {
     $sha1 = New-Object System.Security.Cryptography.SHA1CryptoServiceProvider
     $hashByteArray = $sha1.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($data))
@@ -46,31 +67,22 @@ Function Get-StringHash([String] $data) {
     return $result;
 }
 
-# Check to make sure we have all the parameters we need
-if ('' -eq $vcenter) {
-    $vcenter = Read-Host "Hostname or IP address for vCenter"
-}
-if ('' -eq $username) {
-    $username = Read-Host "vCenter Username"
-}
-if ('' -eq $password) {
-    $ss_password = Read-Host "vCenter Password" -AsSecureString
-    $password = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto([System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($ss_password))
+$DatacenterHash = @{
+    VmFolders   = @{}
+    HostFolders = @{}
 }
 
-if ($null -eq $csv) {
-    $csv = $false
-}
+$VmHostMap = @{}
+$ESXiHostsHash = @{}
+$ClusterHash = @{}
+$VMList = [System.Collections.ArrayList]::new()
 
-Connect-VIServer $vcenter -User $username -Password $password | Out-Null
+$statsArray = [System.Collections.ArrayList]::new()
+$statsHash = @{}
+$metricDays = 7
 
-if (0 -eq $?) {
-    # Connection failed, exit with code = 99
-    ExitWithCode 99
-}
+Function IIf($If, $Right, $Wrong) { If ($If) { $Right } Else { $Wrong } }
 
-Write-Output "BEGIN_DATA_PARSE_SECTION"
-#$allData = "" | Select-Object vms, hosts
 $allData = @{
     VMware = @{
         Clusters = @()
@@ -97,100 +109,167 @@ Function Add-DataNode($type, $data) {
     }
 }
 
-$allvms = @()
-$allhosts = @()
+Function ProcessDatacenters {
+    $dcs = Get-View -ViewType Datacenter
 
-$hosts = Get-VMHost
-$vms = Get-Vm
-
-foreach ($vmHost in $hosts) {
-    # TODO - BCBUSH - Remove me
-    #$hoststat = "" | Select-Object HostName, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin, NumCpu, CpuTotalGhz
-    $hoststat = @{}
-
-    $hoststat.HostName = (IIF $anon (Get-StringHash $vmHost.name) $vmHost.name)
-    $hoststat.HostID = $vmHost.ID.substring(11)
-  
-    $statcpu = Get-Stat -Entity ($vmHost)-start (get-date).AddDays(-$metricDays) -Finish (Get-Date)-MaxSamples 10 -stat cpu.usage.average
-    $statmem = Get-Stat -Entity ($vmHost)-start (get-date).AddDays(-$metricDays) -Finish (Get-Date)-MaxSamples 10 -stat mem.usage.average
-
-    $cpu = $statcpu | Measure-Object -Property value -Average -Maximum -Minimum
-    $mem = $statmem | Measure-Object -Property value -Average -Maximum -Minimum
-  
-    $hoststat.CPUMax = [math]::round($cpu.Maximum, 2)
-    $hoststat.CPUAvg = [math]::round($cpu.Average, 2)
-    $hoststat.CPUMin = [math]::round($cpu.Minimum, 2)
-    $hoststat.MemMax = [math]::round($mem.Maximum, 2)
-    $hoststat.MemAvg = [math]::round($mem.Average, 2)
-    $hoststat.MemMin = [math]::round($mem.Minimum, 2)
-    $hoststat.CpuTotalGhz = [math]::round($vmHost.CpuTotalMhz / 1000, 2)
-    $hoststat.NumCpu = $vmHost.NumCpu
-    $hoststat.Cluster = LookupName $anonTables.cluster $vmHost.Parent.Name
-    $hoststat.MetricDays = $metricDays
-    #$allhosts += $hoststat
-    Add-DataNode "Hosts" $hoststat
-}
-
-foreach ($vm in $vms) {
-    # TODO - BCBUSH - Remove me
-    #$vmstat = "" | Select-Object Id, VmName, GuestOS, PowerState, NumCPUs, CpuGhz, MemoryGB, HarddiskGB, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin
-    $vmstat = @{}
-    
-    $vmstat.VMID = $vm.ID.substring(15)
-    $vmstat.HostID = $vm.VmHostId.substring(11)
-    $vmstat.VmName = (IIF $anon (Get-StringHash $vm.Name) $vm.Name)
-    $vmstat.Cluster = LookupName $anonTables.cluster (Get-VMHost -VM $vm.Name).parent.name
-    $vmstat.Datacenter = LookupName $anonTables.datacenter (Get-Datacenter -VM $vm.Name).Name
-
-    $vmstat.GuestOS = IIF $vm.Guest.OSFullname.length $vm.Guest.OSFullname (Get-View -viewtype VirtualMachine -filter @{"Name" = $vm.Name }).Config.GuestFullName
-    $vmstat.Powerstate = $vm.PowerState
-    $vmstat.NumCPUs = $vm.NumCPU
-    $vmstat.MemoryGB = $vm.MemoryGB
-    $vmstat.CpuGhz = [math]::round($vm.NumCPU * $vmHost.CpuTotalMhz / $vmHost.NumCpu / 1000, 2)
-    $vmstat.VDiskCount = (Get-HardDisk $vm.Name).count
-
-    $vmstat.StorageAllocated = [math]::round($vm.ProvisionedSpaceGB, 2)
-    $vmstat.StorageUsed = [math]::round($vm.UsedSpaceGB, 2)
-    
-    if ($vm.PowerState) {
-        $statcpu = Get-Stat -Entity ($vm)-start (get-date).AddDays(-$metricDays) -Finish (Get-Date)-MaxSamples 10 -stat "cpu.usage.average"
-        $statmem = Get-Stat -Entity ($vm)-start (get-date).AddDays(-$metricDays) -Finish (Get-Date)-MaxSamples 10 -stat "mem.usage.average"
-  
-        $cpu = $statcpu | Measure-Object -Property value -Average -Maximum -Minimum
-        $mem = $statmem | Measure-Object -Property value -Average -Maximum -Minimum
-        $vmstat.CPUMax = [math]::round($cpu.Maximum, 2)
-        $vmstat.CPUAvg = [math]::round($cpu.Average, 2)
-        $vmstat.CPUMin = [math]::round($cpu.Minimum, 2)
-        $vmstat.MemMax = [math]::round($mem.Maximum, 2)
-        $vmstat.MemAvg = [math]::round($mem.Average, 2)
-        $vmstat.MemMin = [math]::round($mem.Minimum, 2)
-        $vmstat.MetricDays = $metricDays
+    foreach ($dc in $dcs) {
+        $DatacenterHash.VmFolders[$dc.VmFolder.value] = $dc.Name
+        $DatacenterHash.HostFolders[$dc.HostFolder.value] = $dc.Name
     }
-    else {
-        $vmstat.CPUMax = 0.0
-        $vmstat.CPUAvg = 0.0
-        $vmstat.CPUMin = 0.0
-        $vmstat.MemMax = 0.0
-        $vmstat.MemAvg = 0.0
-        $vmstat.MemMin = 0.0
-        $vmstat.MetricDays = 0
+}
+
+Function ProcessClusters {
+    $clusters = Get-View -viewtype ComputeResource
+
+    foreach ($cluster in $clusters) {
+        $newCluster = @{}
+        $newCluster.Parent = $cluster.Parent.value
+        $newCluster.Name = $cluster.Name
+        $ClusterHash[$cluster.MoRef.value] = $newCluster
     }
-    
-    #$allvms += $vmstat
-    Add-DataNode "vms" $vmstat
-}
-# TODO - BCBUSH - Remove me
-#$allData.vms = $allvms | Select-Object ID, VmName, GuestOS, PowerState, NumCPUs, CPUGhz, MemoryGB, HarddiskGB, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin
-#$allData.hosts = $allhosts | Select-Object HostName, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin, NumCpu, CpuTotalGhz 
-#$allData.vms = $allvms
-#$allData.hosts = $allhosts 
-
-
-if ($csv) {
-    $allhosts | Select-Object HostName, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin | Export-Csv "Hosts.csv" -noTypeInformation
-    $allvms | Select-Object VmName, PowerState, NumCPUs, MemoryGB, HarddiskGB, MemMax, MemAvg, MemMin, CPUMax, CPUAvg, CPUMin | Export-Csv "VMs10.csv" -noTypeInformation
 }
 
-Write-Output $allData | ConvertTo-Json -Depth 10 
-#Write-Host ($allData | Format-Table | Out-String)
-Exit 0
+Function ProcessESXiHosts {
+    $esxiHosts = Get-View -viewtype HostSystem
+
+    foreach ($esxiHost in $esxiHosts) {
+        $newESXiHost = @{}
+
+        $newESXiHost.Name = $esxiHost.Name
+        [void]$statsArray.Add($esxiHost.Name)
+        $newESXiHost.Parent = $esxiHost.Parent.value
+        $newESXiHost.CPUGhz = [math]::truncate($esxiHost.Hardware.CpuInfo.Hz / 1000 / 1000 / 1000 * 100) / 100
+        $newESXiHost.NumCpu = $esxiHost.Hardware.CpuInfo.NumCpuCores
+        $newESXiHost.CpuTotalGhz = [math]::truncate( ($esxiHost.Hardware.CpuInfo.Hz * $newESXiHost.NumCpu) / 10000000) / 100
+        $newESXiHost.Cluster = $ClusterHash[$newESXiHost.Parent].Name
+        $newESXiHost.MetricDays = $metricDays
+        $newESXiHost.HostID = $esxiHost.MoRef.value
+        $newESXiHost.CPUMax = 0.0
+        $newESXiHost.CPUAvg = 0.0
+        $newESXiHost.CPUMin = 0.0
+        $newESXiHost.MemMax = 0.0
+        $newESXiHost.MemAvg = 0.0
+        $newESXiHost.MemMin = 0.0
+        $newESXiHost.MetricDays = 0
+
+        $ESXiHostsHash[$esxiHost.MoRef.value] = $newESXiHost
+        
+        foreach ($vm in $esxiHost.Vm.value) {
+            $VmHostMap[$vm] = $esxiHost.MoRef.value
+        }
+    }
+}
+
+Function ProcessStats {
+    if ($CollectStats -eq $true) {
+        $stats = Get-Stat -Entity $StatsArray -start (get-date).AddDays(-$metricDays) -Finish (Get-Date)-MaxSamples 10 -stat cpu.usage.average, mem.usage.average
+        $groupedStats = $stats | Group-Object -Property Entity, MetricId
+        foreach ($stat in $groupedStats) {
+            $identifier, $statType = $stat.Name -Split ", "
+            if (-NOT $statsHash.ContainsKey($identifier)) {
+                $statsHash[$identifier] = @{}
+            }
+            $statsHash[$identifier][$statType] = $stat.Group | Measure-Object -Property value -Average -Maximum -Minimum   
+        }
+    } 
+}
+
+Function ProcessVirtualMachines {
+    $vms = Get-View -ViewType VirtualMachine
+    foreach ($vm in $vms) {
+        $newVM = @{}
+        $newVM.VMID = $vm.MoRef.value
+        $newVM.HostID = $VmHostMap[$newVM.VMID]
+        $newVM.Name = $vm.Name
+        $newVM.Datacenter = $DatacenterHash.HostFolders[$ClusterHash[$ESXiHostsHash[$newVM.HostID].Parent].Parent]
+        $newVM.Cluster = $ClusterHash[$ESXiHostsHash[$newVM.HostID].Parent].Name
+        $newVM.GuestOS = IIf $vm.Guest.GuestFullName.length $vm.Guest.GuestFullName $vm.Config.GuestFullName
+        $newVM.Powerstate = $vm.Runtime.PowerState
+        # Only collect stats on vms that are powered on
+        if ($newVM.Powerstate -eq "poweredOn") {
+            [void]$statsArray.Add($newVM.Name)
+        }
+        $newVM.NumCPUs = $vm.Config.Hardware.NumCPU
+        $newVM.MemoryGB = $vm.Config.Hardware.MemoryMB / 1024
+        $newVM.CpuGhz = [math]::round($ESXiHostsHash[$newVM.HostID].CPUGhz * $newVM.NumCPUs, 2)
+        $newVM.VDiskCount = $vm.Layout.Disk.count
+        $newVM.StorageUsed = [math]::Round($vm.Summary.Storage.Committed / 1073741824, 2)
+        $newVM.StorageAllocated = [math]::Round( ($vm.Summary.Storage.Uncommitted / 1073741824) + $newVM.StorageUsed, 2)
+
+        # Set default values for the stats, will overwrite later if we are getting stats on this VM
+        $newVM.CPUMax = 0.0
+        $newVM.CPUAvg = 0.0
+        $newVM.CPUMin = 0.0
+        $newVM.MemMax = 0.0
+        $newVM.MemAvg = 0.0
+        $newVM.MemMin = 0.0
+        $newVM.MetricDays = 0
+        [void]$VMList.Add($newVM)
+    }   
+}
+
+Function PopulateStatsInfo($element) {
+    # Check to make sure we are collecting stats
+    if ($CollectStats -eq $true) {
+        # Check to make sure key exists in the $statsHash            
+        if ($statsHash.Contains($element.Name)) {
+            $element.CPUMax = [math]::round($statsHash[$element.Name]['cpu.usage.average'].Maximum, 2)
+            $element.CPUAvg = [math]::round($statsHash[$element.Name]['cpu.usage.average'].Average, 2)
+            $element.CPUMin = [math]::round($statsHash[$element.Name]['cpu.usage.average'].Minimum, 2)
+            $element.MemMax = [math]::round($statsHash[$element.Name]['mem.usage.average'].Maximum, 2)
+            $element.MemAvg = [math]::round($statsHash[$element.Name]['mem.usage.average'].Average, 2)
+            $element.MemMin = [math]::round($statsHash[$element.Name]['mem.usage.average'].Minimum, 2)
+            $element.MetricDays = $metricDays
+
+        }
+    }
+}
+
+Function AnonymizeVmData($vm) {
+    if ($anon) {
+        $vm.Cluster = LookupName $anonTables.cluster $vm.Cluster
+        $vm.Datacenter = LookupName $anonTables.datacenter $vm.Datacenter
+        $vm.Name = Get-StringHash $vm.Name
+    }
+}
+
+Function AnonymizeEsxiData($esxiHost) {
+    if ($anon) {
+        $esxiHost.Cluster = LookupName $anonTables.cluster $esxiHost.Cluster
+        $esxiHost.Name = Get-StringHash $esxiHost.Name
+    }
+}
+
+Function GenerateJsonData {
+    # Iterate over all the hosts
+    $esxiHostKeys = $ESXiHostsHash.Keys
+    foreach ($esxiHostKey in $esxiHostKeys) {
+        $esxiHost = $ESXiHostsHash[$esxiHostKey]
+        PopulateStatsInfo $esxiHost
+        AnonymizeEsxiData $esxiHost
+        Add-DataNode "Hosts" $esxiHost
+    }
+
+    # Iterate over all the VMs
+    foreach ($vm in $VMList) {
+        PopulateStatsInfo $vm
+        AnonymizeVmData $vm
+        Add-DataNode "vms" $vm
+    }
+}
+
+ProcessDatacenters 
+ProcessClusters 
+ProcessESXiHosts 
+ProcessVirtualMachines 
+ProcessStats 
+GenerateJsonData
+
+if ($script) {
+    Write-Output "BEGIN_DATA_PARSE_SECTION"
+    $allData | ConvertTo-Json -Depth 10 
+}
+else {
+    $allData | ConvertTo-Json -Depth 10 | Out-File -FilePath $outputFile
+}
+
